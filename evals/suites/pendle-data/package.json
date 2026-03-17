@@ -1,0 +1,8 @@
+{
+  "name": "@pendle-ai/eval-suite-pendle-data",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "eval": "promptfoo eval --config promptfoo.yaml --env-file ../../../.env --grader openrouter:openai/gpt-4o-mini"
+  }
+}

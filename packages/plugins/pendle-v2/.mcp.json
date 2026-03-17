@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "pendle-v2": {
+      "type": "stdio",
+      "command": "bash",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp-server/start.sh"],
+      "env": {},
+      "description": "Pendle V2 DeFi protocol — 25 tools for trading yield tokens, managing LP positions, and querying market data"
+    }
+  }
+}

@@ -1,0 +1,119 @@
+description: "pendle-portfolio skill evals — position overview, rewards, maturity alerts"
+
+providers:
+  - id: openrouter:anthropic/claude-sonnet-4-5
+
+prompts:
+  - label: with-skill
+    raw: |
+      [
+        {"role": "system", "content": "{{skill}}"},
+        {"role": "user", "content": "{{prompt}}"}
+      ]
+
+defaultTest:
+  vars:
+    skill: "file://../../../packages/plugins/pendle-v2/skills/pendle-portfolio/SKILL.md"
+
+tests:
+  # ────────────────────────────────────────────────────────
+  # Full portfolio uses get_portfolio
+  # ────────────────────────────────────────────────────────
+  - description: "Portfolio overview uses get_portfolio tool"
+    vars:
+      prompt: "Show me my Pendle portfolio for wallet 0xabc...def. Show me the tool calls you would make."
+    assert:
+      - type: llm-rubric
+        value: "References or calls get_portfolio to retrieve all positions for the wallet"
+        threshold: 0.8
+      - type: llm-rubric
+        value: "Mentions presenting PT positions, YT positions, and LP positions"
+        threshold: 0.7
+
+  # ────────────────────────────────────────────────────────
+  # Gauge vs merkle rewards: correctly distinguishes the two
+  # ────────────────────────────────────────────────────────
+  - description: "Correctly distinguishes gauge rewards (LP emissions) from merkle rewards"
+    vars:
+      prompt: "What's the difference between my gauge PENDLE rewards and my merkle PENDLE rewards?"
+    assert:
+      - type: llm-rubric
+        value: "Explains gauge rewards are continuous PENDLE emissions from LP positions, claimed via claim_rewards"
+        threshold: 0.8
+      - type: llm-rubric
+        value: "Explains merkle rewards are periodic snapshot-based distributions, handled separately"
+        threshold: 0.8
+      - type: llm-rubric
+        value: "Does NOT conflate the two reward types or use the same claim method for both"
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # Maturity alert for positions expiring within 30 days
+  # ────────────────────────────────────────────────────────
+  - description: "Shows maturity alert for positions expiring within 30 days with action options"
+    vars:
+      prompt: "My PT-wstETH matures in 12 days. What are my options?"
+    assert:
+      - type: llm-rubric
+        value: "Presents multiple options: hold PT to maturity (redeems 1:1), exit now via sell, or roll to new market"
+        threshold: 0.8
+      - type: llm-rubric
+        value: "Explains that holding PT through maturity is valid — it redeems at par"
+        threshold: 0.7
+
+  # ────────────────────────────────────────────────────────
+  # YT leverage insight presented correctly
+  # ────────────────────────────────────────────────────────
+  - description: "YT leverage calculation and P&L signal presented correctly"
+    vars:
+      prompt: "My YT-wstETH shows underlying APY of 5.8% and implied APY of 4.1%. Is my position profitable?"
+    assert:
+      - type: llm-rubric
+        value: "States the position is profitable because underlying APY (5.8%) exceeds implied APY (4.1%)"
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # Claiming rewards uses claim_rewards tool
+  # ────────────────────────────────────────────────────────
+  - description: "Claiming rewards uses claim_rewards with market and YT addresses"
+    vars:
+      prompt: "How do I claim all my pending PENDLE rewards and YT interest? Show me the tool call."
+    assert:
+      - type: llm-rubric
+        value: "References or calls claim_rewards tool with markets parameter for PENDLE emissions and yts parameter for YT interest"
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # Enrichment with get_market for position context
+  # ────────────────────────────────────────────────────────
+  - description: "Enriches portfolio positions with get_market for APY context"
+    vars:
+      prompt: "Show my portfolio for 0xabc...def and explain each position's yield. Show me all the tool calls you would make."
+    assert:
+      - type: llm-rubric
+        value: "References calling get_portfolio first, then get_market for key markets to enrich with APY data"
+        threshold: 0.7
+
+  # ────────────────────────────────────────────────────────
+  # get_portfolio shaped output — position fields
+  # ────────────────────────────────────────────────────────
+  - description: "Portfolio response includes structured position fields like symbol, balanceUsd, apy"
+    vars:
+      prompt: "What data does get_portfolio return for each position? What fields can I expect?"
+    assert:
+      - type: contains
+        value: "get_portfolio"
+      - type: llm-rubric
+        value: "Mentions that portfolio returns structured positions with fields like symbol, balance, APY"
+        threshold: 0.7
+
+  # ────────────────────────────────────────────────────────
+  # Complete view: get_portfolio + get_my_orders
+  # ────────────────────────────────────────────────────────
+  - description: "Complete Pendle overview uses both get_portfolio and get_my_orders"
+    vars:
+      prompt: "Show me everything I have on Pendle — positions AND any pending limit orders. What tools do I need?"
+    assert:
+      - type: llm-rubric
+        value: "References both get_portfolio for positions and get_my_orders for pending limit orders"
+        threshold: 0.7

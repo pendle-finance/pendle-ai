@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Testing
+coverage/
+.nyc_output/
+
+# Cache
+.cache/
+.turbo/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Claude Code output
+.claude-output/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Release artifacts
+*.tgz
+
+# Promptfoo
+.promptfoo/
+

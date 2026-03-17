@@ -1,0 +1,165 @@
+description: "pendle-order skill evals — limit orders, EIP-712, fill conditions"
+
+providers:
+  - id: openrouter:anthropic/claude-sonnet-4-5
+
+prompts:
+  - label: with-skill
+    raw: |
+      [
+        {"role": "system", "content": "{{skill}}"},
+        {"role": "user", "content": "{{prompt}}"}
+      ]
+
+defaultTest:
+  vars:
+    skill: "file://../../../packages/plugins/pendle-v2/skills/pendle-order/SKILL.md"
+
+tests:
+  # ────────────────────────────────────────────────────────
+  # Create TOKEN_FOR_PT order — correct flow
+  # ────────────────────────────────────────────────────────
+  - description: "Creating a buy PT limit order uses correct orderType and parameters"
+    vars:
+      prompt: "Set a limit order to buy PT-wstETH when the implied APY hits 9%. I want to spend 500 USDC. My address is 0xabc...123. Show me the tool call."
+    assert:
+      - type: llm-rubric
+        value: "References orderType TOKEN_FOR_PT and calls or references create_limit_order tool"
+        threshold: 0.8
+      - type: llm-rubric
+        value: "Sets targetApy to 0.09 (not 9 or 9.0)"
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # Generate response shape: { order, hash } — not { typedData }
+  # ────────────────────────────────────────────────────────
+  - description: "Claude presents the hash field from create_limit_order and asks user to sign it"
+    vars:
+      prompt: "Generate a limit order for me to buy PT at 8% APY, spending 500 USDC. My address is 0xabc...123. Show me the tool call and explain the response."
+    assert:
+      - type: llm-rubric
+        value: "References create_limit_order and mentions the 'hash' field in the response for signing"
+        threshold: 0.8
+      - type: llm-rubric
+        value: "Instructs the user to sign the hash with their wallet"
+        threshold: 0.7
+      - type: llm-rubric
+        value: "Mentions the next step is to submit via submit_limit_order after receiving the signature"
+        threshold: 0.7
+
+  # ────────────────────────────────────────────────────────
+  # Full workflow: generate -> sign -> submit
+  # ────────────────────────────────────────────────────────
+  - description: "Claude completes the full limit order flow: create, present hash for signing, then submit"
+    vars:
+      prompt: "I want to place a limit order to buy PT-wstETH at 9% APY, spending 100 USDC. My address is 0xabc...123. After you generate the order data, I'll sign the hash and give you the signature so you can submit it. Show me the full workflow."
+    assert:
+      - type: llm-rubric
+        value: "References create_limit_order with orderType TOKEN_FOR_PT and targetApy around 0.09"
+        threshold: 0.8
+      - type: llm-rubric
+        value: "Presents the hash from the response and explains the user needs to sign it before submitting"
+        threshold: 0.8
+      - type: llm-rubric
+        value: "Indicates that after the user provides the signature, submit_limit_order will be called to submit"
+        threshold: 0.7
+
+  # ────────────────────────────────────────────────────────
+  # Order type direction: TOKEN_FOR_PT fills at high APY
+  # ────────────────────────────────────────────────────────
+  - description: "Correctly explains that TOKEN_FOR_PT order fills when implied APY reaches the target"
+    vars:
+      prompt: "If I place a buy PT limit order at 9%, when does it actually fill?"
+    assert:
+      - type: llm-rubric
+        value: "Explains the order fills when the market's implied APY rises to or above 9%"
+        threshold: 0.8
+      - type: llm-rubric
+        value: "Explains that higher APY means PT is cheaper (deeper discount), making it favorable to buy"
+        threshold: 0.7
+
+  # ────────────────────────────────────────────────────────
+  # View order book: correct tool and presentation
+  # ────────────────────────────────────────────────────────
+  - description: "Viewing order book uses get_order_book with market address"
+    vars:
+      prompt: "Show me the order book for the wstETH market at 0x8a8a...7db8 on Arbitrum. What tool call do I need?"
+    assert:
+      - type: llm-rubric
+        value: "References or calls get_order_book with the market address and chainId"
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # Cancel orders: uses cancel_limit_orders
+  # ────────────────────────────────────────────────────────
+  - description: "Cancelling orders uses cancel_limit_orders tool"
+    vars:
+      prompt: "I want to cancel all my pending limit orders on Arbitrum. My address is 0xabc...123. Show me the tool call."
+    assert:
+      - type: llm-rubric
+        value: "References or calls cancel_limit_orders to cancel all orders for the maker"
+        threshold: 0.8
+      - type: llm-rubric
+        value: "Explains that cancel_limit_orders is used to cancel orders, and that it cancels all outstanding orders at once"
+        threshold: 0.6
+
+  # ────────────────────────────────────────────────────────
+  # PT_FOR_TOKEN order type — sell PT limit order
+  # ────────────────────────────────────────────────────────
+  - description: "Sell PT limit order uses PT_FOR_TOKEN orderType"
+    vars:
+      prompt: "I want to sell my PT-wstETH when the implied APY drops to 5%. Set up a limit order. My address is 0xabc...123."
+    assert:
+      - type: llm-rubric
+        value: "References orderType PT_FOR_TOKEN for selling PT and calls or references create_limit_order"
+        threshold: 0.8
+      - type: llm-rubric
+        value: "References the target APY as a decimal (0.05) or percentage (5%) correctly"
+        threshold: 0.6
+
+  # ────────────────────────────────────────────────────────
+  # Context check: shows current APY before creating order
+  # ────────────────────────────────────────────────────────
+  - description: "Shows current market APY context before creating order"
+    vars:
+      prompt: "I want to set a limit order on the wstETH market on Arbitrum at 10% APY. My address is 0xabc...123."
+    assert:
+      - type: llm-rubric
+        value: "Checks the current implied APY (via get_market or similar) before creating the order, to give context"
+        threshold: 0.7
+      - type: llm-rubric
+        value: "Either shows current market APY before proceeding, or asks the user to confirm their target APY"
+        threshold: 0.5
+
+  # ────────────────────────────────────────────────────────
+  # get_my_orders tool usage for viewing pending orders
+  # ────────────────────────────────────────────────────────
+  - description: "Viewing pending limit orders uses get_my_orders tool"
+    vars:
+      prompt: "How do I see my pending limit orders on Arbitrum? What specific tool should I use?"
+    assert:
+      - type: llm-rubric
+        value: "References or mentions the get_my_orders tool for viewing pending limit orders"
+        threshold: 0.7
+
+  # ────────────────────────────────────────────────────────
+  # Cancel gas cost awareness
+  # ────────────────────────────────────────────────────────
+  - description: "Cancelling orders mentions gas costs for on-chain transaction"
+    vars:
+      prompt: "Cancel all my limit orders on Arbitrum. My wallet is 0xabc...123. What should I know about gas costs?"
+    assert:
+      - type: llm-rubric
+        value: "Mentions that order cancellation is an on-chain transaction that costs gas, and references cancel_limit_orders"
+        threshold: 0.7
+
+  # ────────────────────────────────────────────────────────
+  # submit_limit_order field names: orderType and YT
+  # ────────────────────────────────────────────────────────
+  - description: "submit_limit_order uses orderType (not type) and YT (not yt) field names"
+    vars:
+      prompt: "Walk me through the submit_limit_order step. What fields from create_limit_order do I pass in?"
+    assert:
+      - type: llm-rubric
+        value: "Uses orderType instead of type, and YT instead of yt when describing submit_limit_order parameters"
+        threshold: 0.7

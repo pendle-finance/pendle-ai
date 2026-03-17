@@ -1,0 +1,292 @@
+description: "pendle-swap skill evals — trade execution, tool selection, approval rules, maturity guards"
+
+providers:
+  - id: openrouter:anthropic/claude-sonnet-4-5
+
+prompts:
+  - label: with-skill
+    raw: |
+      [
+        {"role": "system", "content": "{{skill}}"},
+        {"role": "user", "content": "{{prompt}}"}
+      ]
+
+defaultTest:
+  vars:
+    skill: "file://../../../packages/plugins/pendle-v2/skills/pendle-swap/SKILL.md"
+
+tests:
+  # ────────────────────────────────────────────────────────
+  # CRITICAL: Sell PT requires manual approval
+  # ────────────────────────────────────────────────────────
+  - description: "Sell PT — must approve PT even when requiredApprovals may be empty"
+    vars:
+      prompt: "I have 100 PT-wstETH tokens on Arbitrum (market 0x1234...abcd) and want to sell them for USDC. Walk me through the exact steps including tool calls."
+    assert:
+      - type: llm-rubric
+        value: "Mentions or references calling approve() on the PT token contract before submitting the sell transaction"
+        threshold: 0.8
+      - type: llm-rubric
+        value: "Identifies sell_pt as the correct tool or action for selling PT tokens"
+        threshold: 0.8
+      - type: not-contains
+        value: "no approval needed"
+
+  # ────────────────────────────────────────────────────────
+  # CRITICAL: Sell YT requires manual approval
+  # ────────────────────────────────────────────────────────
+  - description: "Sell YT — must approve YT even when requiredApprovals may be empty"
+    vars:
+      prompt: "I want to exit my YT-wstETH position on Arbitrum (market 0x1234...abcd) and receive USDC. Show me the exact tool calls and steps."
+    assert:
+      - type: llm-rubric
+        value: "Mentions or references calling approve() on the YT token contract before submitting the sell transaction"
+        threshold: 0.8
+      - type: llm-rubric
+        value: "Identifies sell_yt as the correct tool or action for selling YT tokens"
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # YT price impact: negative is favorable
+  # ────────────────────────────────────────────────────────
+  - description: "Negative price impact on YT buy is normal and favorable — must not warn user to abort"
+    vars:
+      prompt: "I got a quote to buy YT and it shows -1.8% price impact. Is that bad? Should I abort?"
+    assert:
+      - type: llm-rubric
+        value: "Explains that negative price impact means the user is getting MORE than the spot price expects, which is favorable"
+        threshold: 0.8
+      - type: llm-rubric
+        value: "Does NOT tell the user to abort or be concerned about a -1.8% price impact on a YT buy"
+        threshold: 1.0
+      - type: not-contains
+        value: "you should abort"
+
+  # ────────────────────────────────────────────────────────
+  # Buy PT action detection
+  # ────────────────────────────────────────────────────────
+  - description: "Buy PT: correctly identifies buy_pt as the tool"
+    vars:
+      prompt: "I want to convert 1000 USDC into PT-wstETH on Arbitrum to lock in a fixed yield. Show me the tool call."
+    assert:
+      - type: llm-rubric
+        value: "References or calls buy_pt as the tool for buying PT with USDC as input"
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # Buy YT action detection
+  # ────────────────────────────────────────────────────────
+  - description: "Buy YT: correctly identifies buy_yt as the tool"
+    vars:
+      prompt: "I want to buy YT-wstETH with 500 USDC on Arbitrum to get leveraged yield exposure. Show me the tool call."
+    assert:
+      - type: llm-rubric
+        value: "References or calls buy_yt as the tool for buying YT with USDC as input"
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # Mint SY (wrap)
+  # ────────────────────────────────────────────────────────
+  - description: "Mint SY: identifies mint_redeem with action mint-sy"
+    vars:
+      prompt: "I want to wrap my USDC into SY-wstETH on Arbitrum (market 0x1234...abcd). What tool and parameters do I use?"
+    assert:
+      - type: llm-rubric
+        value: "References or calls mint_redeem with action 'mint-sy' and USDC as the token input"
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # Redeem SY (unwrap)
+  # ────────────────────────────────────────────────────────
+  - description: "Redeem SY: identifies mint_redeem with action redeem-sy"
+    vars:
+      prompt: "I have SY-wstETH on Arbitrum (market 0x1234...abcd) and want to unwrap it back to USDC. What tool and parameters?"
+    assert:
+      - type: llm-rubric
+        value: "References or calls mint_redeem with action 'redeem-sy' and USDC as the output token"
+        threshold: 0.8
+      - type: llm-rubric
+        value: "Mentions approving SY to the router before submitting"
+        threshold: 0.7
+
+  # ────────────────────────────────────────────────────────
+  # Mint PT & YT (split)
+  # ────────────────────────────────────────────────────────
+  - description: "Mint PT & YT: identifies mint_redeem with action mint-py"
+    vars:
+      prompt: "I want to mint both PT and YT from 1000 USDC on Arbitrum (market 0x1234...abcd). Is that possible in one call? Show me."
+    assert:
+      - type: llm-rubric
+        value: "References or calls mint_redeem with action 'mint-py' to split token into PT + YT"
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # Redeem PT & YT at maturity
+  # ────────────────────────────────────────────────────────
+  - description: "Redeem PT at maturity: uses mint_redeem with action redeem-py"
+    vars:
+      prompt: "My PT-wstETH has matured. How do I redeem it for the underlying asset?"
+    assert:
+      - type: llm-rubric
+        value: "References mint_redeem with action 'redeem-py' or sell_pt for post-maturity redemption"
+        threshold: 0.8
+      - type: llm-rubric
+        value: "Explains that redemption is 1:1 with no slippage after maturity, and only PT is needed (YT is worthless)"
+        threshold: 0.7
+
+  # ────────────────────────────────────────────────────────
+  # pendle_swap — ERC20 swap (renamed from swap)
+  # ────────────────────────────────────────────────────────
+  - description: "Token swap: identifies pendle_swap for general ERC20-to-ERC20"
+    vars:
+      prompt: "I want to swap 500 USDC to ETH on Arbitrum. Not buying PT or YT, just a regular token swap. What tool do I use?"
+    assert:
+      - type: llm-rubric
+        value: "References or calls pendle_swap (not buy_pt or buy_yt) for a general ERC20-to-ERC20 token swap"
+        threshold: 0.8
+      - type: not-contains
+        value: "buy_pt"
+
+  # ────────────────────────────────────────────────────────
+  # Post-maturity buy_pt blocked
+  # ────────────────────────────────────────────────────────
+  - description: "Buy PT on expired market: explains it is blocked post-maturity"
+    vars:
+      prompt: "The wstETH market expired yesterday. Can I still buy PT?"
+    assert:
+      - type: llm-rubric
+        value: "States that buying PT post-maturity is blocked because PT already trades at 1:1 with underlying"
+        threshold: 0.8
+      - type: llm-rubric
+        value: "Suggests using sell_pt or redeem-py to redeem existing PT instead"
+        threshold: 0.7
+
+  # ────────────────────────────────────────────────────────
+  # Preview before execution (mandatory per execution protocol)
+  # ────────────────────────────────────────────────────────
+  - description: "Execution protocol: uses preview_trade before action tool"
+    vars:
+      prompt: "Buy 100 USDC of PT-wstETH on Arbitrum. My address is 0xabc...123."
+    assert:
+      - type: llm-rubric
+        value: "References calling preview_trade first to show expected output and price impact before executing the actual buy"
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # Slippage defaults explained
+  # ────────────────────────────────────────────────────────
+  # ────────────────────────────────────────────────────────
+  # Post-maturity: sell_pt WORKS, mint-sy/redeem-sy WORK
+  # ────────────────────────────────────────────────────────
+  - description: "Sell PT post-maturity: explains it is allowed for 1:1 redemption"
+    vars:
+      prompt: "The wstETH market expired. Can I still sell my PT to get USDC back?"
+    assert:
+      - type: llm-rubric
+        value: "States that selling PT post-maturity is allowed and results in 1:1 redemption, or suggests redeem-py"
+        threshold: 0.8
+
+  - description: "mint-sy and redeem-sy available at all times"
+    vars:
+      prompt: "The wstETH market has expired. Can I still wrap USDC into SY or unwrap SY back?"
+    assert:
+      - type: llm-rubric
+        value: "States that mint-sy and redeem-sy are available regardless of market maturity — they work at all times"
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # Slippage defaults explained
+  # ────────────────────────────────────────────────────────
+  # ────────────────────────────────────────────────────────
+  # redeem-py post-maturity only needs PT (YT is worthless)
+  # ────────────────────────────────────────────────────────
+  - description: "redeem-py post-maturity: only PT is needed, YT is worthless"
+    vars:
+      prompt: "The wstETH market has expired. I want to redeem my PT+YT back to underlying. Do I need both tokens?"
+    assert:
+      - type: llm-rubric
+        value: "Explains that post-maturity, only PT is needed for redeem-py. YT is worthless ($0) after expiry and is not required as input."
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # Slippage defaults explained
+  # ────────────────────────────────────────────────────────
+  - description: "Slippage: explains auto-slippage logic when asked"
+    vars:
+      prompt: "What slippage should I use for my trade?"
+    assert:
+      - type: llm-rubric
+        value: "Explains that slippage is auto-determined: 0.1% for trades >= $100 and 0.5% for trades < $100"
+        threshold: 0.8
+      - type: llm-rubric
+        value: "Mentions the user can override with an explicit slippage parameter"
+        threshold: 0.7
+
+  # ────────────────────────────────────────────────────────
+  # humanAmount parameter usage
+  # ────────────────────────────────────────────────────────
+  - description: "Buy PT uses humanAmount parameter (not raw wei)"
+    vars:
+      prompt: "Buy 5 USDC worth of PT on the wstETH market (0x1234...abcd) on Arbitrum. My wallet is 0xabc...123."
+    assert:
+      - type: llm-rubric
+        value: "References buy_pt tool and uses humanAmount parameter (value 5, not raw wei like 5000000) when calling preview_trade or buy_pt"
+        threshold: 0.7
+
+  # ────────────────────────────────────────────────────────
+  # Enriched output understanding — symbol and humanAmount
+  # ────────────────────────────────────────────────────────
+  - description: "Correctly interprets enriched output fields (symbol, humanAmount) in trade result"
+    vars:
+      prompt: "I just ran a buy_pt trade and the result shows outputs with symbol PT-wstETH and humanAmount 4.82. What does that mean?"
+    assert:
+      - type: llm-rubric
+        value: "Correctly interprets the enriched output fields (symbol, humanAmount) in the response"
+        threshold: 0.7
+
+  # ────────────────────────────────────────────────────────
+  # pendle_router for confused users
+  # ────────────────────────────────────────────────────────
+  - description: "Suggests pendle_router when user is unsure which tool to use"
+    vars:
+      prompt: "I'm new to Pendle and not sure which tool to use for what I need. Is there a tool that can help route me to the right one?"
+    assert:
+      - type: llm-rubric
+        value: "References or suggests the pendle_router tool to help identify the right tool based on the user's intent"
+        threshold: 0.7
+
+  # ────────────────────────────────────────────────────────
+  # LP: add_liquidity tool identification
+  # ────────────────────────────────────────────────────────
+  - description: "Add liquidity: identifies add_liquidity as the correct tool"
+    vars:
+      prompt: "I want to add liquidity to the wstETH Pendle pool on Arbitrum (market 0x1234...abcd) using 1000 USDC. What tool should I use?"
+    assert:
+      - type: llm-rubric
+        value: "References or calls add_liquidity with tokenIn as USDC and the market address"
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # LP: remove_liquidity tool identification
+  # ────────────────────────────────────────────────────────
+  - description: "Remove liquidity: identifies remove_liquidity as the correct tool"
+    vars:
+      prompt: "I want to remove my LP from the wstETH Pendle pool on Arbitrum (market 0x1234...abcd) and get USDC. What tool should I use?"
+    assert:
+      - type: llm-rubric
+        value: "References or calls remove_liquidity with the market address and USDC as output token"
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # LP: claim_rewards tool identification
+  # ────────────────────────────────────────────────────────
+  - description: "Claim PENDLE rewards: identifies claim_rewards as the correct tool"
+    vars:
+      prompt: "How do I claim my PENDLE LP rewards on Arbitrum? Show me the tool call."
+    assert:
+      - type: llm-rubric
+        value: "References claim_rewards as the tool to use, mentioning market addresses as parameters"
+        threshold: 0.8
+      - type: llm-rubric
+        value: "States that no ERC-20 approval is needed before claiming rewards"
+        threshold: 0.7

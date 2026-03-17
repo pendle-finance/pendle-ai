@@ -1,0 +1,39 @@
+{
+  "name": "@pendle-ai/source",
+  "version": "0.0.0",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.x"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "typecheck": "turbo run typecheck",
+    "eval": "turbo run eval",
+    "validate": "turbo run validate"
+  },
+  "private": true,
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
+    "@types/node": "^22.0.0",
+    "dotenv": "^16.4.7",
+    "promptfoo": "^0.121.2",
+    "swagger-typescript-api": "^13.6.5",
+    "tsx": "^4.20.6",
+    "turbo": "^2.5.0",
+    "typescript": "5.9.3"
+  },
+  "workspaces": [
+    "packages/*",
+    "packages/plugins/*",
+    "packages/plugins/*/mcp-server",
+    "evals/suites/*"
+  ],
+  "overrides": {
+    "esbuild": "^0.25.0"
+  }
+}

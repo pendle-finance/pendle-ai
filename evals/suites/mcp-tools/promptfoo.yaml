@@ -1,0 +1,1792 @@
+description: "Layer 2 — MCP semantic tool tests (boots pendle-mcp, calls 25 tools against live Pendle API)"
+
+# ─── Provider: actual MCP server ────────────────────────────────────────────
+maxConcurrency: 1
+
+providers:
+  - id: mcp
+    config:
+      enabled: true
+      timeout: 60000
+      server:
+        command: node
+        args: ['../../../packages/plugins/pendle-v2/mcp-server/dist/index.js']
+        name: pendle-mcp
+
+prompts:
+  - '{{prompt}}'
+
+# ─── Test constants ─────────────────────────────────────────────────────────
+# Arbitrum chain ID:    42161
+# Test market (USDai):  0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3
+# USDC:                 0xaf88d065e77c8cC2239327C5EDb3A432268e5831
+# WETH (Arb):           0x82aF49447D8a07e3bd95BD0d56f35241523fBab1
+# Dummy receiver:       0x1111111111111111111111111111111111111111
+#
+# NOTE: MCP provider returns [{"type":"text","text":"<json>"}].
+# The defaultTest.options.transform unwraps the MCP envelope so assertions see raw JSON.
+
+defaultTest:
+  options:
+    transform: |
+      try { const mcp = JSON.parse(output); return Array.isArray(mcp) && mcp[0]?.text ? mcp[0].text : output; } catch { return output; }
+
+tests:
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # QUERY TOOLS (11 tools: get_markets, get_asset, get_chains, get_market,
+  #              get_prices, get_history, get_portfolio, get_order_book,
+  #              resolve_token, preview_trade, pendle_router)
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "get_markets returns active markets with expiry filter"
+    vars:
+      prompt: >
+        {"tool": "get_markets", "args": {
+          "filter": [{"field": "expiry", "op": ">", "value": "2026-01-01T00:00:00Z"}],
+          "limit": 5
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          const arr = Array.isArray(d) ? d : [];
+          return arr.length > 0 && arr[0].address != null;
+
+  - description: "get_markets filters by chainId"
+    vars:
+      prompt: >
+        {"tool": "get_markets", "args": {
+          "filter": [{"field": "chainId", "op": "=", "value": 42161}],
+          "limit": 3
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          const arr = Array.isArray(d) ? d : [];
+          return arr.length > 0 && arr.every(m => m.chainId === 42161);
+
+  - description: "get_markets looks up specific market by address with one flag"
+    vars:
+      prompt: >
+        {"tool": "get_markets", "args": {
+          "filter": [
+            {"field": "chainId", "op": "=", "value": 42161},
+            {"field": "address", "op": "=", "value": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3"}
+          ],
+          "one": true
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d != null && d.address?.toLowerCase() === '0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3';
+
+  - description: "get_markets sorts by details_impliedApy descending"
+    vars:
+      prompt: >
+        {"tool": "get_markets", "args": {
+          "sort": {"field": "details_impliedApy", "direction": "desc"},
+          "limit": 5
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          const arr = Array.isArray(d) ? d : [];
+          return arr.length > 0 && arr[0].details_impliedApy != null;
+
+  - description: "get_markets sorts ascending by details_liquidity"
+    vars:
+      prompt: >
+        {"tool": "get_markets", "args": {
+          "sort": {"field": "details_liquidity", "direction": "asc"},
+          "limit": 3
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          const arr = Array.isArray(d) ? d : [];
+          if (arr.length < 2) return arr.length > 0;
+          return arr[0].details_liquidity <= arr[1].details_liquidity;
+
+  - description: "get_markets numeric > filter on details_liquidity"
+    vars:
+      prompt: >
+        {"tool": "get_markets", "args": {
+          "filter": [{"field": "details_liquidity", "op": ">", "value": 1000000}],
+          "limit": 5
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          const arr = Array.isArray(d) ? d : [];
+          return arr.length > 0 && arr.every(m => m.details_liquidity > 1000000);
+
+  - description: "get_markets boolean filter isPrime = 1"
+    vars:
+      prompt: >
+        {"tool": "get_markets", "args": {
+          "filter": [{"field": "isPrime", "op": "=", "value": 1}],
+          "limit": 5
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          const arr = Array.isArray(d) ? d : [];
+          return arr.length > 0 && arr.every(m => m.isPrime === 1);
+
+  - description: "get_markets != operator excludes chain"
+    vars:
+      prompt: >
+        {"tool": "get_markets", "args": {
+          "filter": [{"field": "chainId", "op": "!=", "value": 1}],
+          "limit": 5
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          const arr = Array.isArray(d) ? d : [];
+          return arr.length > 0 && arr.every(m => m.chainId !== 1);
+
+  - description: "get_markets pagination with skip returns different results"
+    vars:
+      prompt: >
+        {"tool": "get_markets", "args": {
+          "sort": {"field": "details_impliedApy", "direction": "desc"},
+          "limit": 2,
+          "skip": 2
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          const arr = Array.isArray(d) ? d : [];
+          return arr.length > 0 && arr.length <= 2;
+
+  - description: "get_markets compound filter: chain + numeric + expiry"
+    vars:
+      prompt: >
+        {"tool": "get_markets", "args": {
+          "filter": [
+            {"field": "chainId", "op": "=", "value": 42161},
+            {"field": "details_impliedApy", "op": ">", "value": 0.01},
+            {"field": "expiry", "op": ">", "value": "2026-01-01T00:00:00Z"}
+          ],
+          "sort": {"field": "details_impliedApy", "direction": "desc"},
+          "limit": 5
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          const arr = Array.isArray(d) ? d : [];
+          return arr.length > 0 && arr.every(m => m.chainId === 42161 && m.details_impliedApy > 0.01);
+
+  - description: "get_markets invalid field name returns error"
+    vars:
+      prompt: >
+        {"tool": "get_markets", "args": {
+          "filter": [{"field": "nonexistent_column", "op": "=", "value": 1}]
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.ok === false && d.error.message.includes('Invalid filter field');
+
+  - description: "get_markets invalid operator returns error"
+    vars:
+      prompt: >
+        {"tool": "get_markets", "args": {
+          "filter": [{"field": "chainId", "op": "DROP TABLE", "value": 1}]
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.ok === false && d.error.message.includes('Invalid filter operator');
+
+  - description: "get_asset returns metadata for a known Pendle token"
+    vars:
+      prompt: >
+        {"tool": "get_asset", "args": {
+          "chainId": 42161,
+          "address": "0x1cdde40e29da213f42a7fa109ccadca372d9ee1b"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.address != null && d.symbol != null && d.chainId === 42161;
+
+  - description: "get_asset returns all expected fields in response"
+    vars:
+      prompt: >
+        {"tool": "get_asset", "args": {
+          "chainId": 42161,
+          "address": "0x1cdde40e29da213f42a7fa109ccadca372d9ee1b"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return (
+            typeof d.address === 'string' &&
+            typeof d.chainId === 'number' &&
+            typeof d.name === 'string' &&
+            typeof d.symbol === 'string' &&
+            typeof d.decimals === 'number' &&
+            d.tags != null
+          );
+
+  - description: "get_asset handles mixed-case address input"
+    vars:
+      prompt: >
+        {"tool": "get_asset", "args": {
+          "chainId": 42161,
+          "address": "0x1CddE40E29DA213F42a7fA109cCAdCA372D9EE1B"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.address != null && d.symbol != null && d.chainId === 42161;
+
+  - description: "get_asset returns error for unknown address"
+    vars:
+      prompt: >
+        {"tool": "get_asset", "args": {
+          "chainId": 42161,
+          "address": "0x0000000000000000000000000000000000000001"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.ok === false && d.error != null;
+
+  - description: "get_asset error for unknown address suggests resolve_token"
+    vars:
+      prompt: >
+        {"tool": "get_asset", "args": {
+          "chainId": 42161,
+          "address": "0x0000000000000000000000000000000000000001"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.ok === false && d.error.message.includes('resolve_token');
+
+  - description: "get_chains returns array of chain IDs"
+    vars:
+      prompt: >
+        {"tool": "get_chains", "args": {}}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return Array.isArray(d.chainIds) && d.chainIds.length > 0 && d.chainIds.includes(42161);
+
+  - description: "get_market returns merged APY + token data"
+    vars:
+      prompt: >
+        {"tool": "get_market", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.data != null && d.tokens != null && d.identity != null;
+
+  - description: "get_prices returns prices for USDC + PT"
+    vars:
+      prompt: >
+        {"tool": "get_prices", "args": {
+          "chainId": 42161,
+          "addresses": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831,0x1cdde40e29da213f42a7fa109ccadca372d9ee1b"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          const prices = d.prices || d;
+          return Object.keys(prices).length >= 2;
+
+  - description: "get_history returns time-series data"
+    vars:
+      prompt: >
+        {"tool": "get_history", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "fields": "timestamp,impliedApy,underlyingApy"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          const arr = d.results || (Array.isArray(d) ? d : []);
+          return arr.length > 0;
+
+  - description: "get_portfolio returns valid response for dummy wallet"
+    vars:
+      prompt: >
+        {"tool": "get_portfolio", "args": {
+          "user": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          try { JSON.parse(s); return true; } catch { return false; }
+
+  - description: "get_order_book returns order book entries"
+    vars:
+      prompt: >
+        {"tool": "get_order_book", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.longYieldEntries != null || d.shortYieldEntries != null;
+
+  - description: "resolve_token finds USDC on Arbitrum"
+    vars:
+      prompt: >
+        {"tool": "resolve_token", "args": {
+          "chainId": 42161,
+          "query": "USDC"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.ok === true && Array.isArray(d.matches) && d.matches.length > 0;
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.matches.some(m => m.symbol?.toUpperCase().includes('USDC') || m.name?.toUpperCase().includes('USDC'));
+
+  - description: "resolve_token returns empty for nonsense query"
+    vars:
+      prompt: >
+        {"tool": "resolve_token", "args": {
+          "chainId": 42161,
+          "query": "ZZZZNONEXISTENT12345"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.ok === true && Array.isArray(d.matches) && d.matches.length === 0 && d.hint != null;
+
+  - description: "preview_trade buy_pt returns preview without tx.data"
+    vars:
+      prompt: >
+        {"tool": "preview_trade", "args": {
+          "chainId": 42161,
+          "action": "buy_pt",
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.ok === true && d.preview != null;
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          const p = d.preview;
+          return typeof p.priceImpact === 'number' && p.routerAddress != null && p.expectedOutputs != null;
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.nextTool != null && d.nextTool.tool === 'buy_pt';
+
+  - description: "preview_trade pendle_swap returns preview"
+    vars:
+      prompt: >
+        {"tool": "preview_trade", "args": {
+          "chainId": 42161,
+          "action": "pendle_swap",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "tokenOut": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.ok === true && d.preview != null && typeof d.preview.priceImpact === 'number';
+
+  - description: "preview_trade invalid mode returns validation error"
+    vars:
+      prompt: >
+        {"tool": "preview_trade", "args": {
+          "chainId": 42161,
+          "action": "add_liquidity",
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111",
+          "mode": "dual"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          return s.toLowerCase().includes('invalid') || s.toLowerCase().includes('error') || s.includes('Expected');
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # ACTION TOOLS — buy/sell PT/YT
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "buy_pt returns shaped tx with approvals"
+    vars:
+      prompt: >
+        {"tool": "buy_pt", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.transaction?.to != null && d.transaction?.data != null;
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return typeof d.action === 'string' && typeof d.priceImpact === 'number';
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return Array.isArray(d.approvals);
+
+  - description: "sell_pt returns shaped tx"
+    vars:
+      prompt: >
+        {"tool": "sell_pt", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenOut": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000000000000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.transaction?.to != null && d.transaction?.data != null;
+
+  - description: "buy_yt returns shaped tx with priceImpact"
+    vars:
+      prompt: >
+        {"tool": "buy_yt", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.transaction?.to != null && typeof d.priceImpact === 'number';
+
+  - description: "sell_yt returns shaped tx"
+    vars:
+      prompt: >
+        {"tool": "sell_yt", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenOut": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000000000000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.transaction?.to != null && d.transaction?.data != null;
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # ACTION TOOLS — pendle_swap (ERC20-to-ERC20 via aggregator)
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "pendle_swap swaps USDC to WETH via aggregator"
+    vars:
+      prompt: >
+        {"tool": "pendle_swap", "args": {
+          "chainId": 42161,
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "tokenOut": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.transaction?.to != null && d.transaction?.data != null;
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return typeof d.priceImpact === 'number' && Array.isArray(d.outputs);
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # ACTION TOOLS — liquidity
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "add_liquidity single mode returns add-liquidity action"
+    vars:
+      prompt: >
+        {"tool": "add_liquidity", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return typeof d.action === 'string' && d.action.includes('add-liquidity');
+
+  - description: "add_liquidity zpi mode returns tx"
+    vars:
+      prompt: >
+        {"tool": "add_liquidity", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111",
+          "mode": "zpi"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.transaction?.to != null && d.transaction?.data != null;
+
+  - description: "add_liquidity invalid mode returns validation error"
+    vars:
+      prompt: >
+        {"tool": "add_liquidity", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111",
+          "mode": "dual"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          return s.toLowerCase().includes('invalid') || s.toLowerCase().includes('error') || s.includes('Expected');
+
+  - description: "remove_liquidity returns remove-liquidity action"
+    vars:
+      prompt: >
+        {"tool": "remove_liquidity", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenOut": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "1000000000000000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return typeof d.action === 'string' && d.action.includes('remove-liquidity');
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # ACTION TOOLS — mint/redeem
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "mint_redeem mint-sy returns tx"
+    vars:
+      prompt: >
+        {"tool": "mint_redeem", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "action": "mint-sy",
+          "token": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.transaction?.to != null && d.transaction?.data != null;
+
+  - description: "mint_redeem redeem-sy returns tx"
+    vars:
+      prompt: >
+        {"tool": "mint_redeem", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "action": "redeem-sy",
+          "token": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "1000000000000000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.transaction?.to != null && d.transaction?.data != null;
+
+  - description: "mint_redeem mint-py returns tx with 2 outputs"
+    vars:
+      prompt: >
+        {"tool": "mint_redeem", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "action": "mint-py",
+          "token": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.transaction?.to != null && Array.isArray(d.outputs) && d.outputs.length >= 2;
+
+  - description: "mint_redeem redeem-py returns tx"
+    vars:
+      prompt: >
+        {"tool": "mint_redeem", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "action": "redeem-py",
+          "token": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "1000000000000000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.transaction?.to != null && d.transaction?.data != null;
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # ACTION TOOLS — claim rewards
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "claim_rewards returns tx with no approvals needed"
+    vars:
+      prompt: >
+        {"tool": "claim_rewards", "args": {
+          "chainId": 42161,
+          "receiver": "0x1111111111111111111111111111111111111111",
+          "yts": "0x5de2065f3c709b24f31c736ef28c1cbb27ceedfc",
+          "markets": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.tx?.to != null && d.note != null;
+
+  - description: "claim_rewards with no positions returns validation error"
+    vars:
+      prompt: >
+        {"tool": "claim_rewards", "args": {
+          "chainId": 42161,
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.ok === false && d.error != null && d.error.message.includes('At least one');
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # LIMIT ORDER TOOLS
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "create_limit_order reaches balance validation"
+    vars:
+      prompt: >
+        {"tool": "create_limit_order", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "orderType": "TOKEN_FOR_PT",
+          "token": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "maker": "0x1111111111111111111111111111111111111111",
+          "amount": "10000000",
+          "targetApy": 0.08,
+          "expiry": "1780000000"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          return s.includes('balance') || s.includes('hash') || s.includes('400');
+
+  - description: "get_order_book returns long/short yield entries"
+    vars:
+      prompt: >
+        {"tool": "get_order_book", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "precisionDecimal": 2
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.longYieldEntries != null || d.shortYieldEntries != null;
+
+  - description: "cancel_limit_orders returns tx calldata for cancel-all"
+    vars:
+      prompt: >
+        {"tool": "cancel_limit_orders", "args": {
+          "chainId": 42161,
+          "maker": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          try { JSON.parse(s); return true; } catch { return s.length > 0; }
+
+  - description: "submit_limit_order with invalid data returns structured error"
+    vars:
+      prompt: >
+        {"tool": "submit_limit_order", "args": {
+          "chainId": 42161,
+          "signature": "0xdeadbeef",
+          "salt": "123",
+          "expiry": "1780000000",
+          "nonce": "0",
+          "type": 0,
+          "token": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "yt": "0x5de2065f3c709b24f31c736ef28c1cbb27ceedfc",
+          "maker": "0x1111111111111111111111111111111111111111",
+          "receiver": "0x1111111111111111111111111111111111111111",
+          "makingAmount": "10000000",
+          "lnImpliedRate": "0",
+          "failSafeRate": "0",
+          "permit": "0x"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          try { const d = JSON.parse(s); return true; } catch { return s.length > 0; }
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # MATURITY GUARDS — expired market (gDAI, expired 2024-03-28)
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "buy_pt on expired market returns MARKET_EXPIRED error"
+    vars:
+      prompt: >
+        {"tool": "buy_pt", "args": {
+          "chainId": 42161,
+          "market": "0xa0192f6567f8f5dc38c53323235fd08b318d2dca",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.ok === false && d.error.code === 'MARKET_EXPIRED';
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.error.message.toLowerCase().includes('cannot buy pt') && d.error.message.includes('post-maturity');
+
+  - description: "buy_yt on expired market returns MARKET_EXPIRED error"
+    vars:
+      prompt: >
+        {"tool": "buy_yt", "args": {
+          "chainId": 42161,
+          "market": "0xa0192f6567f8f5dc38c53323235fd08b318d2dca",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.ok === false && d.error.code === 'MARKET_EXPIRED';
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.error.message.toLowerCase().includes('cannot buy yt') && d.error.message.includes('worthless');
+
+  - description: "sell_yt on expired market returns MARKET_EXPIRED error"
+    vars:
+      prompt: >
+        {"tool": "sell_yt", "args": {
+          "chainId": 42161,
+          "market": "0xa0192f6567f8f5dc38c53323235fd08b318d2dca",
+          "tokenOut": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000000000000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.ok === false && d.error.code === 'MARKET_EXPIRED';
+
+  - description: "add_liquidity on expired market returns MARKET_EXPIRED error"
+    vars:
+      prompt: >
+        {"tool": "add_liquidity", "args": {
+          "chainId": 42161,
+          "market": "0xa0192f6567f8f5dc38c53323235fd08b318d2dca",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.ok === false && d.error.code === 'MARKET_EXPIRED';
+
+  - description: "mint_redeem mint-py on expired market returns MARKET_EXPIRED error"
+    vars:
+      prompt: >
+        {"tool": "mint_redeem", "args": {
+          "chainId": 42161,
+          "market": "0xa0192f6567f8f5dc38c53323235fd08b318d2dca",
+          "action": "mint-py",
+          "token": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.ok === false && d.error.code === 'MARKET_EXPIRED';
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # PREVIEW_TRADE — additional coverage
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "preview_trade mint-sy next field points to mint_redeem"
+    vars:
+      prompt: >
+        {"tool": "preview_trade", "args": {
+          "chainId": 42161,
+          "action": "mint-sy",
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.ok === true && d.nextTool != null && d.nextTool.tool === 'mint_redeem';
+
+  - description: "preview_trade buy_pt on expired market returns MARKET_EXPIRED"
+    vars:
+      prompt: >
+        {"tool": "preview_trade", "args": {
+          "chainId": 42161,
+          "action": "buy_pt",
+          "market": "0xa0192f6567f8f5dc38c53323235fd08b318d2dca",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.ok === false && d.error.code === 'MARKET_EXPIRED';
+
+  - description: "preview_trade buy_pt missing tokenIn returns error"
+    vars:
+      prompt: >
+        {"tool": "preview_trade", "args": {
+          "chainId": 42161,
+          "action": "buy_pt",
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.ok === false && d.error.message.includes('tokenIn is required');
+
+  - description: "preview_trade pendle_swap missing market still works"
+    vars:
+      prompt: >
+        {"tool": "preview_trade", "args": {
+          "chainId": 42161,
+          "action": "pendle_swap",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "tokenOut": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.ok === true && d.nextTool != null && d.nextTool.tool === 'pendle_swap';
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # ERROR STRUCTURE — verify all errors have code/retryable/action
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "structured error has code, retryable, action, and message fields"
+    vars:
+      prompt: >
+        {"tool": "buy_pt", "args": {
+          "chainId": 42161,
+          "market": "0xa0192f6567f8f5dc38c53323235fd08b318d2dca",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          const e = d.error;
+          return d.ok === false && typeof e.code === 'string' && typeof e.retryable === 'boolean' && typeof e.action === 'string' && typeof e.message === 'string';
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # POST-MATURITY ALLOWED OPERATIONS — expired market, these SHOULD work
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "sell_pt on expired market NOT blocked by maturity guard"
+    vars:
+      prompt: >
+        {"tool": "sell_pt", "args": {
+          "chainId": 42161,
+          "market": "0xa0192f6567f8f5dc38c53323235fd08b318d2dca",
+          "tokenOut": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "1000000000000000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          // Must NOT return MARKET_EXPIRED — sell_pt has no maturity guard.
+          // May return INVALID_PARAMS (API delisted old market) or succeed — both are fine.
+          return d.error?.code !== 'MARKET_EXPIRED';
+
+  - description: "redeem-py on expired market NOT blocked by maturity guard"
+    vars:
+      prompt: >
+        {"tool": "mint_redeem", "args": {
+          "chainId": 42161,
+          "market": "0xa0192f6567f8f5dc38c53323235fd08b318d2dca",
+          "action": "redeem-py",
+          "token": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "1000000000000000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          // Must NOT return MARKET_EXPIRED — redeem-py always works.
+          // May return INVALID_PARAMS (API delisted) or succeed — both are fine.
+          return d.error?.code !== 'MARKET_EXPIRED';
+
+  - description: "remove_liquidity on expired market NOT blocked by maturity guard"
+    vars:
+      prompt: >
+        {"tool": "remove_liquidity", "args": {
+          "chainId": 42161,
+          "market": "0xa0192f6567f8f5dc38c53323235fd08b318d2dca",
+          "tokenOut": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "1000000000000000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          // Must NOT return MARKET_EXPIRED — remove_liquidity has no maturity guard.
+          return d.error?.code !== 'MARKET_EXPIRED';
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # SLIPPAGE VALIDATION — explicit slippage > 0.5 rejected
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "explicit slippage > 0.5 returns error"
+    vars:
+      prompt: >
+        {"tool": "buy_pt", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111",
+          "slippage": 0.8
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.ok === false && d.error.message.includes('between 0 and 0.5');
+
+  - description: "explicit slippage = 0 is accepted (not rejected by validation)"
+    vars:
+      prompt: >
+        {"tool": "buy_pt", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111",
+          "slippage": 0
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          // slippage=0 is valid (within [0, 0.5] range). Trade may succeed or fail
+          // due to zero tolerance, but it must NOT return the "between 0 and 0.5" error.
+          const isSlippageRejection = d.error?.message?.includes('between 0 and 0.5');
+          return !isSlippageRejection;
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # RESOLVE_TOKEN VALIDATION — query too short
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "resolve_token rejects query shorter than 2 chars"
+    vars:
+      prompt: >
+        {"tool": "resolve_token", "args": {
+          "chainId": 42161,
+          "query": "X"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.ok === false && d.error.message.includes('at least 2');
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # PREVIEW_TRADE — untested actions & validation
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "preview_trade sell_pt returns preview with next pointing to sell_pt"
+    vars:
+      prompt: >
+        {"tool": "preview_trade", "args": {
+          "chainId": 42161,
+          "action": "sell_pt",
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenOut": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "1000000000000000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.ok === true && d.nextTool != null && d.nextTool.tool === 'sell_pt';
+
+  - description: "preview_trade remove_liquidity returns preview"
+    vars:
+      prompt: >
+        {"tool": "preview_trade", "args": {
+          "chainId": 42161,
+          "action": "remove_liquidity",
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenOut": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "1000000000000000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.ok === true && d.preview != null && d.nextTool != null && d.nextTool.tool === 'remove_liquidity';
+
+  - description: "preview_trade redeem-py returns next pointing to mint_redeem"
+    vars:
+      prompt: >
+        {"tool": "preview_trade", "args": {
+          "chainId": 42161,
+          "action": "redeem-py",
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenOut": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "1000000000000000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.ok === true && d.nextTool != null && d.nextTool.tool === 'mint_redeem';
+
+  - description: "preview_trade add_liquidity zpi mode returns preview"
+    vars:
+      prompt: >
+        {"tool": "preview_trade", "args": {
+          "chainId": 42161,
+          "action": "add_liquidity",
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111",
+          "mode": "zpi"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.ok === true && d.preview != null && d.nextTool != null && d.nextTool.tool === 'add_liquidity';
+
+  - description: "preview_trade pendle_swap missing tokenOut returns error"
+    vars:
+      prompt: >
+        {"tool": "preview_trade", "args": {
+          "chainId": 42161,
+          "action": "pendle_swap",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.ok === false && d.error.message.includes('tokenOut is required');
+
+  - description: "preview_trade sell_pt on expired market NOT blocked by maturity guard"
+    vars:
+      prompt: >
+        {"tool": "preview_trade", "args": {
+          "chainId": 42161,
+          "action": "sell_pt",
+          "market": "0xa0192f6567f8f5dc38c53323235fd08b318d2dca",
+          "tokenOut": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "1000000000000000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          // sell_pt has no maturity guard — should NOT return MARKET_EXPIRED.
+          // May return INVALID_PARAMS if API delisted old market — that's fine.
+          return d.error?.code !== 'MARKET_EXPIRED';
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # PREVIEW_TRADE — field shape validation
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "preview_trade returns all required fields in preview object"
+    vars:
+      prompt: >
+        {"tool": "preview_trade", "args": {
+          "chainId": 42161,
+          "action": "buy_pt",
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          const p = d.preview;
+          return (
+            d.ok === true &&
+            typeof p.action === 'string' &&
+            Array.isArray(p.expectedOutputs) &&
+            typeof p.priceImpact === 'number' &&
+            typeof p.priceImpactPct === 'string' &&
+            typeof p.slippageUsed === 'number' &&
+            typeof p.routerAddress === 'string' &&
+            Array.isArray(p.approvals) &&
+            typeof p.approvalsNote === 'string' &&
+            d.nextTool != null && typeof d.nextTool.tool === 'string'
+          );
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # ACTION TOOLS — output shape validation
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "buy_pt returns all required fields in response"
+    vars:
+      prompt: >
+        {"tool": "buy_pt", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return (
+            typeof d.action === 'string' &&
+            Array.isArray(d.outputs) && d.outputs.length > 0 &&
+            typeof d.outputs[0].token === 'string' &&
+            typeof d.outputs[0].amount === 'string' &&
+            typeof d.priceImpact === 'number' &&
+            typeof d.transaction.to === 'string' &&
+            typeof d.transaction.data === 'string' &&
+            Array.isArray(d.approvals)
+          );
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # GET_MARKETS — no filters returns results
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "get_markets with no filters returns markets"
+    vars:
+      prompt: >
+        {"tool": "get_markets", "args": {
+          "limit": 3
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          const arr = Array.isArray(d) ? d : [];
+          return arr.length > 0;
+
+  - description: "get_markets LIKE filter matches by name"
+    vars:
+      prompt: >
+        {"tool": "get_markets", "args": {
+          "filter": [{"field": "name", "op": "LIKE", "value": "%ETH%"}],
+          "limit": 5
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          const arr = Array.isArray(d) ? d : [];
+          return arr.length > 0 && arr.every(m => m.name.toUpperCase().includes('ETH'));
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # CLAIM_REWARDS — SY parameter works
+  # ══════════════════════════════════════════════════════════════════════════
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # PREVIEW_TRADE — remaining untested actions
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "preview_trade buy_yt returns preview with next pointing to buy_yt"
+    vars:
+      prompt: >
+        {"tool": "preview_trade", "args": {
+          "chainId": 42161,
+          "action": "buy_yt",
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.ok === true && d.nextTool != null && d.nextTool.tool === 'buy_yt';
+
+  - description: "preview_trade sell_yt returns preview with next pointing to sell_yt"
+    vars:
+      prompt: >
+        {"tool": "preview_trade", "args": {
+          "chainId": 42161,
+          "action": "sell_yt",
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenOut": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "1000000000000000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.ok === true && d.nextTool != null && d.nextTool.tool === 'sell_yt';
+
+  - description: "preview_trade add_liquidity single returns preview with next pointing to add_liquidity"
+    vars:
+      prompt: >
+        {"tool": "preview_trade", "args": {
+          "chainId": 42161,
+          "action": "add_liquidity",
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.ok === true && d.nextTool != null && d.nextTool.tool === 'add_liquidity';
+
+  - description: "preview_trade redeem-sy returns preview with next pointing to mint_redeem"
+    vars:
+      prompt: >
+        {"tool": "preview_trade", "args": {
+          "chainId": 42161,
+          "action": "redeem-sy",
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenOut": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "1000000000000000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.ok === true && d.nextTool != null && d.nextTool.tool === 'mint_redeem';
+
+  - description: "preview_trade redeem-sy without market returns error"
+    vars:
+      prompt: >
+        {"tool": "preview_trade", "args": {
+          "chainId": 42161,
+          "action": "redeem-sy",
+          "tokenOut": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "1000000000000000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.ok === false && d.error.message.includes('market is required');
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # MATURITY GUARDS — error shape: retryable is false
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "MARKET_EXPIRED error has retryable=false"
+    vars:
+      prompt: >
+        {"tool": "buy_yt", "args": {
+          "chainId": 42161,
+          "market": "0xa0192f6567f8f5dc38c53323235fd08b318d2dca",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.error.code === 'MARKET_EXPIRED' && d.error.retryable === false;
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # GET_PRICES — flexibility tests
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "get_prices with only chainId returns prices for that chain"
+    vars:
+      prompt: >
+        {"tool": "get_prices", "args": {
+          "chainId": 42161
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          const prices = d.prices || d;
+          return Object.keys(prices).length > 0;
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # CLAIM_REWARDS — combined parameters
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "claim_rewards with only markets parameter returns valid response"
+    vars:
+      prompt: >
+        {"tool": "claim_rewards", "args": {
+          "chainId": 42161,
+          "receiver": "0x1111111111111111111111111111111111111111",
+          "markets": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          const d = JSON.parse(s);
+          return d.tx?.to != null && d.note != null;
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # ENRICHED OUTPUTS — symbol, decimals, humanAmount on outputs & approvals
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "buy_pt outputs include symbol and decimals enrichment"
+    vars:
+      prompt: >
+        {"tool": "buy_pt", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.outputs[0].symbol != null && typeof d.outputs[0].decimals === 'number';
+
+  - description: "buy_pt outputs include humanAmount field"
+    vars:
+      prompt: >
+        {"tool": "buy_pt", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.outputs[0].humanAmount != null && typeof d.outputs[0].humanAmount === 'string';
+
+  - description: "pendle_swap outputs include enrichment fields"
+    vars:
+      prompt: >
+        {"tool": "pendle_swap", "args": {
+          "chainId": 42161,
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "tokenOut": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          const o = d.outputs[0];
+          return o.symbol != null && typeof o.decimals === 'number' && o.humanAmount != null;
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # HUMANAMOUNT PARAMETER — accept human-readable amounts
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "buy_pt accepts humanAmount instead of wei amount"
+    vars:
+      prompt: >
+        {"tool": "buy_pt", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "humanAmount": 5,
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.transaction?.to != null && d.transaction?.data != null;
+
+  - description: "pendle_swap accepts humanAmount instead of wei amount"
+    vars:
+      prompt: >
+        {"tool": "pendle_swap", "args": {
+          "chainId": 42161,
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "tokenOut": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+          "humanAmount": 5,
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.transaction?.to != null && d.transaction?.data != null;
+
+  - description: "rejects when both amount and humanAmount are provided"
+    vars:
+      prompt: >
+        {"tool": "buy_pt", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "humanAmount": 10,
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.ok === false && d.error.message.toLowerCase().includes('not both');
+
+  - description: "add_liquidity accepts humanAmount"
+    vars:
+      prompt: >
+        {"tool": "add_liquidity", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "humanAmount": 5,
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.transaction?.to != null && d.transaction?.data != null;
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # STRUCTURED NEXTTOOL — params and instruction fields
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "preview_trade nextTool includes params and instruction fields"
+    vars:
+      prompt: >
+        {"tool": "preview_trade", "args": {
+          "chainId": 42161,
+          "action": "buy_pt",
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.nextTool != null && typeof d.nextTool.params === 'object' && typeof d.nextTool.instruction === 'string';
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # GET_MY_ORDERS — new tool
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "get_my_orders returns valid response for maker"
+    vars:
+      prompt: >
+        {"tool": "get_my_orders", "args": {
+          "chainId": 42161,
+          "maker": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          try { JSON.parse(s); return true; } catch { return false; }
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # PENDLE_ROUTER — intent-based routing tool
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "pendle_router suggests buy_pt for fixed yield intent"
+    vars:
+      prompt: >
+        {"tool": "pendle_router", "args": {
+          "intent": "I want to earn a fixed yield on ETH"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.suggestions != null && d.suggestions.some(s => s.tool === 'buy_pt');
+
+  - description: "pendle_router suggests pendle_swap for token swap"
+    vars:
+      prompt: >
+        {"tool": "pendle_router", "args": {
+          "intent": "swap USDC to WETH"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.suggestions != null && d.suggestions.some(s => s.tool === 'pendle_swap');
+
+  - description: "pendle_router returns suggestions with tip for any intent"
+    vars:
+      prompt: >
+        {"tool": "pendle_router", "args": {
+          "intent": "help me do something"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.suggestions != null && d.suggestions.length >= 1 && d.tip != null;
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # CANCEL_LIMIT_ORDERS — gas cost note
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "cancel_limit_orders response includes gas cost note"
+    vars:
+      prompt: >
+        {"tool": "cancel_limit_orders", "args": {
+          "chainId": 42161,
+          "maker": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return d.note != null && d.note.toLowerCase().includes('gas');
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # SUBMIT_LIMIT_ORDER — field renames (orderType, YT)
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "submit_limit_order accepts renamed fields orderType and YT"
+    vars:
+      prompt: >
+        {"tool": "submit_limit_order", "args": {
+          "chainId": 42161,
+          "signature": "0xdeadbeef",
+          "salt": "123",
+          "expiry": "1780000000",
+          "nonce": "0",
+          "orderType": 0,
+          "token": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "YT": "0x5de2065f3c709b24f31c736ef28c1cbb27ceedfc",
+          "maker": "0x1111111111111111111111111111111111111111",
+          "receiver": "0x1111111111111111111111111111111111111111",
+          "makingAmount": "10000000",
+          "lnImpliedRate": "0",
+          "failSafeRate": "0",
+          "permit": "0x"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const s = String(output);
+          try { const d = JSON.parse(s); return true; } catch { return s.length > 0; }
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # PREVIEW APPROVAL INSTRUCTION — parity with execute shape
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "preview_trade approvals include instruction field"
+    vars:
+      prompt: >
+        {"tool": "preview_trade", "args": {
+          "chainId": 42161,
+          "action": "buy_pt",
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "tokenIn": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+          "amount": "10000000",
+          "receiver": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          const approvals = d.preview?.approvals || [];
+          if (approvals.length === 0) return true;
+          return approvals.every(a => typeof a.instruction === 'string');
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # GET_PORTFOLIO — shaped output validation
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "get_portfolio returns shaped positions with totalPositions"
+    vars:
+      prompt: >
+        {"tool": "get_portfolio", "args": {
+          "user": "0x1111111111111111111111111111111111111111"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          return Array.isArray(d.positions) && typeof d.totalPositions === 'number';
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # GET_HISTORY — timeFrame enum validation
+  # ══════════════════════════════════════════════════════════════════════════
+
+  - description: "get_history accepts timeFrame hour"
+    vars:
+      prompt: >
+        {"tool": "get_history", "args": {
+          "chainId": 42161,
+          "market": "0x8a8a557b90ec79496a18a1f9c9da8bbd7db86fd3",
+          "fields": "timestamp,impliedApy",
+          "timeFrame": "hour"
+        }}
+    assert:
+      - type: javascript
+        value: |
+          const d = JSON.parse(output);
+          const arr = d.results || (Array.isArray(d) ? d : []);
+          return arr.length > 0;

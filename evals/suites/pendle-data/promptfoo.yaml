@@ -1,0 +1,371 @@
+description: "pendle-data skill evals — market query, asset lookup, APY analytics, strategy insights, filter correctness"
+
+providers:
+  - id: openrouter:anthropic/claude-sonnet-4-5
+
+prompts:
+  - label: with-skill
+    raw: |
+      [
+        {"role": "system", "content": "{{skill}}"},
+        {"role": "user", "content": "{{prompt}}"}
+      ]
+
+defaultTest:
+  vars:
+    skill: "file://../../../packages/plugins/pendle-v2/skills/pendle-data/SKILL.md"
+
+tests:
+  # ════════════════════════════════════════════════════════
+  # SECTION 1: Tool selection
+  # ════════════════════════════════════════════════════════
+
+  # ────────────────────────────────────────────────────────
+  # get_markets for market discovery
+  # ────────────────────────────────────────────────────────
+  - description: "Find markets with highest APY uses get_markets with sort"
+    vars:
+      prompt: "Which Pendle market offers the highest fixed yield right now? Show me the tool call."
+    assert:
+      - type: llm-rubric
+        value: "References or calls get_markets with sort by details_impliedApy in descending order"
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # get_markets with name filter
+  # ────────────────────────────────────────────────────────
+  - description: "Show stablecoin markets uses get_markets with name LIKE filter"
+    vars:
+      prompt: "Show me all stablecoin Pendle markets. What tool call should I use?"
+    assert:
+      - type: llm-rubric
+        value: "References or calls get_markets with a LIKE filter on the name field to match stablecoin patterns (e.g. '%USD%' or '%stable%')"
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # get_market for deep dive
+  # ────────────────────────────────────────────────────────
+  - description: "Single market deep-dive uses get_market for comprehensive data"
+    vars:
+      prompt: "Give me a full breakdown of the wstETH Pendle market at 0xd8fd77ba...abc on Arbitrum (chain 42161). Show me the tool call."
+    assert:
+      - type: llm-rubric
+        value: "References or calls get_market with chainId and market address to gather detailed market info"
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # LP token = market address
+  # ────────────────────────────────────────────────────────
+  - description: "LP token address equals market contract address"
+    vars:
+      prompt: "What is the LP token address for the wstETH market at 0xabc...123?"
+    assert:
+      - type: llm-rubric
+        value: "States that the LP token address IS the market address — they are the same contract"
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # get_asset for Pendle token lookup
+  # ────────────────────────────────────────────────────────
+  - description: "get_asset for Pendle token metadata lookup"
+    vars:
+      prompt: "I have a PT token at address 0xabc...123 on Arbitrum (chain 42161). How do I look up its metadata?"
+    assert:
+      - type: llm-rubric
+        value: "References or calls get_asset with chainId and address to look up the Pendle token metadata"
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # resolve_token for ERC-20 lookup
+  # ────────────────────────────────────────────────────────
+  - description: "Token address resolution uses resolve_token"
+    vars:
+      prompt: "What's the address of stETH on Ethereum? Show me the tool call."
+    assert:
+      - type: llm-rubric
+        value: "References or calls resolve_token with chainId and query to find the token address"
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # APY history uses get_history
+  # ────────────────────────────────────────────────────────
+  - description: "APY history uses get_history with correct fields"
+    vars:
+      prompt: "Show me the historical APY trend for the wstETH market over the past week. What tool call do I need?"
+    assert:
+      - type: llm-rubric
+        value: "References or calls get_history with the market address, requesting impliedApy and/or underlyingApy fields"
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # get_prices for token pricing
+  # ────────────────────────────────────────────────────────
+  - description: "Token pricing uses get_prices tool"
+    vars:
+      prompt: "What is the current USD price of PT-wstETH and YT-wstETH on Arbitrum? Show me the tool call."
+    assert:
+      - type: llm-rubric
+        value: "References or calls get_prices with the PT and YT token addresses to look up USD prices"
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # get_chains for supported chains
+  # ────────────────────────────────────────────────────────
+  - description: "Supported chains query uses get_chains tool"
+    vars:
+      prompt: "What blockchain networks does Pendle support? Show me the tool call."
+    assert:
+      - type: llm-rubric
+        value: "References or calls get_chains to retrieve the list of supported chain IDs, rather than listing hardcoded chain IDs from memory"
+        threshold: 0.8
+
+  - description: "References get_chains as the authoritative source for supported chains"
+    vars:
+      prompt: "Which chains can I use Pendle on? I need the exact list."
+    assert:
+      - type: llm-rubric
+        value: "References or calls the get_chains tool as the way to retrieve the supported chain list. It may also mention some chain names, but must indicate that get_chains is the authoritative source for the up-to-date list."
+        threshold: 0.8
+
+  # ════════════════════════════════════════════════════════
+  # SECTION 2: Yield strategy insights
+  # ════════════════════════════════════════════════════════
+
+  # ────────────────────────────────────────────────────────
+  # implied > underlying = PT opportunity
+  # ────────────────────────────────────────────────────────
+  - description: "When implied APY > underlying APY, correctly identifies PT opportunity"
+    vars:
+      prompt: "The wstETH market shows 8% implied APY but only 5% underlying APY. What does that mean?"
+    assert:
+      - type: llm-rubric
+        value: "Explains that PT is undervalued — locking in 8% fixed yield beats the current 5% variable rate"
+        threshold: 0.8
+      - type: llm-rubric
+        value: "Recommends buying PT as a favorable fixed-income positioning"
+        threshold: 0.7
+
+  # ────────────────────────────────────────────────────────
+  # implied < underlying = YT opportunity
+  # ────────────────────────────────────────────────────────
+  - description: "When implied APY < underlying APY, correctly identifies YT opportunity"
+    vars:
+      prompt: "The market shows 4% implied APY but the underlying protocol is yielding 7%. What should I consider?"
+    assert:
+      - type: llm-rubric
+        value: "Identifies YT as the opportunity — market underprices yield, so YT is profitable if underlying stays above 4%"
+        threshold: 0.8
+
+  # ════════════════════════════════════════════════════════
+  # SECTION 3: Filter correctness — column names
+  # ════════════════════════════════════════════════════════
+
+  # ────────────────────────────────────────────────────────
+  # CRITICAL: Must use flat details_ prefix, NOT dot notation
+  # ────────────────────────────────────────────────────────
+  - description: "Filter uses flat details_impliedApy column name, NOT details.impliedApy dot notation"
+    vars:
+      prompt: "Show me Pendle markets where implied APY is above 5%. Write the exact get_markets tool call with the filter parameter as JSON."
+    assert:
+      - type: llm-rubric
+        value: "The filter field name uses the flat underscore format 'details_impliedApy', NOT a nested dot notation like 'details.impliedApy' or 'impliedApy' without the details_ prefix"
+        threshold: 1.0
+      - type: not-icontains
+        value: "details.impliedApy"
+      - type: not-icontains
+        value: "details.implied_apy"
+
+  - description: "Filter uses flat details_liquidity column name for liquidity queries"
+    vars:
+      prompt: "Find markets with liquidity above $500,000. Show me the exact get_markets filter JSON."
+    assert:
+      - type: llm-rubric
+        value: "The filter field name uses 'details_liquidity' (flat underscore format), NOT 'details.liquidity', 'liquidity.usd', or just 'liquidity'"
+        threshold: 1.0
+      - type: not-icontains
+        value: "details.liquidity"
+      - type: not-icontains
+        value: "liquidity.usd"
+
+  - description: "Filter uses flat details_aggregatedApy for LP APY queries"
+    vars:
+      prompt: "Which markets have total LP APY above 15%? Give me the exact get_markets call."
+    assert:
+      - type: llm-rubric
+        value: "The filter uses field name 'details_aggregatedApy' with a decimal value like 0.15 (not 15), and operator '>' or '>='"
+        threshold: 0.9
+      - type: not-icontains
+        value: "details.aggregatedApy"
+
+  # ════════════════════════════════════════════════════════
+  # SECTION 4: Filter correctness — APY as decimal
+  # ════════════════════════════════════════════════════════
+
+  # ────────────────────────────────────────────────────────
+  # CRITICAL: APY values must be decimals (0.05), not percentages (5)
+  # ────────────────────────────────────────────────────────
+  - description: "APY filter uses decimal 0.05 for 5%, not the integer 5"
+    vars:
+      prompt: "Find Pendle markets with fixed yield above 5%. Show me the exact filter JSON for get_markets."
+    assert:
+      - type: llm-rubric
+        value: "The filter value for details_impliedApy uses a decimal like 0.05 to represent 5%, NOT the integer 5 or the string '5%'. APY values in the database are stored as decimals where 0.05 = 5%."
+        threshold: 1.0
+
+  - description: "APY filter uses decimal 0.10 for 10%, not the integer 10"
+    vars:
+      prompt: "Show me markets where the underlying APY is greater than 10%. Write the exact get_markets filter."
+    assert:
+      - type: llm-rubric
+        value: "The filter value for details_underlyingApy uses a decimal like 0.1 or 0.10 to represent 10%, NOT the integer 10. The database stores APY as decimals."
+        threshold: 1.0
+
+  # ════════════════════════════════════════════════════════
+  # SECTION 5: Filter correctness — structure & operators
+  # ════════════════════════════════════════════════════════
+
+  # ────────────────────────────────────────────────────────
+  # Filter must use {field, op, value} object format
+  # ────────────────────────────────────────────────────────
+  - description: "Filter uses structured {field, op, value} objects in an array"
+    vars:
+      prompt: "Find all markets on Ethereum (chainId 1) that have implied APY above 3%. Show me the exact get_markets call with all parameters."
+    assert:
+      - type: llm-rubric
+        value: "The filter parameter is an array of objects, where each object has three keys: 'field' (column name), 'op' (operator string like '=' or '>'), and 'value' (the comparison value). NOT a flat key-value object like {chainId: 1}."
+        threshold: 0.9
+      - type: llm-rubric
+        value: "Contains two filter entries: one for chainId = 1 and one for details_impliedApy > 0.03"
+        threshold: 0.8
+
+  # ────────────────────────────────────────────────────────
+  # LIKE operator requires SQL wildcards (%)
+  # ────────────────────────────────────────────────────────
+  - description: "LIKE filter includes SQL wildcard percent signs"
+    vars:
+      prompt: "Find all Pendle markets with 'ETH' in the name. Show me the exact filter JSON."
+    assert:
+      - type: llm-rubric
+        value: "The filter uses op 'LIKE' with a value that includes SQL wildcard '%' characters, such as '%ETH%'. NOT just the literal string 'ETH' without wildcards."
+        threshold: 1.0
+      - type: icontains
+        value: "%ETH%"
+
+  # ────────────────────────────────────────────────────────
+  # Equality filter uses = operator (not LIKE)
+  # ────────────────────────────────────────────────────────
+  - description: "Exact chainId filter uses = operator, not LIKE"
+    vars:
+      prompt: "Get all markets on Arbitrum (chain 42161). Show me the get_markets call."
+    assert:
+      - type: llm-rubric
+        value: "The filter for chainId uses operator '=' with numeric value 42161, NOT a LIKE operator or string value '42161'"
+        threshold: 0.9
+
+  # ════════════════════════════════════════════════════════
+  # SECTION 6: Filter correctness — boolean columns
+  # ════════════════════════════════════════════════════════
+
+  # ────────────────────────────────────────────────────────
+  # Boolean columns use INTEGER (1/0), not true/false
+  # ────────────────────────────────────────────────────────
+  - description: "isPrime filter uses integer 1, not boolean true"
+    vars:
+      prompt: "Show me only prime Pendle markets. Write the exact get_markets filter."
+    assert:
+      - type: llm-rubric
+        value: "The filter for isPrime uses the integer value 1 (not boolean true or string 'true'), because SQLite stores booleans as INTEGER 1/0"
+        threshold: 0.8
+
+  # ════════════════════════════════════════════════════════
+  # SECTION 7: Filter correctness — active market handling
+  # ════════════════════════════════════════════════════════
+
+  # ────────────────────────────────────────────────────────
+  # No isActive column — must filter by expiry date
+  # ────────────────────────────────────────────────────────
+  - description: "Active markets filtered by expiry date, not a nonexistent isActive column"
+    vars:
+      prompt: "Show me only active (not expired) Pendle markets. Write the exact get_markets tool call."
+    assert:
+      - type: llm-rubric
+        value: "Filters active markets by comparing the 'expiry' column with a date string using '>' operator (e.g. expiry > current date), NOT by using a nonexistent 'isActive' column"
+        threshold: 0.9
+      - type: not-icontains
+        value: "isActive"
+
+  # ════════════════════════════════════════════════════════
+  # SECTION 8: Sort correctness
+  # ════════════════════════════════════════════════════════
+
+  # ────────────────────────────────────────────────────────
+  # Sort uses {field, direction} object format
+  # ────────────────────────────────────────────────────────
+  - description: "Sort parameter uses correct {field, direction} structure with 'asc' or 'desc'"
+    vars:
+      prompt: "List Pendle markets sorted by total TVL from highest to lowest, limit to top 5. Show the exact get_markets call."
+    assert:
+      - type: llm-rubric
+        value: "The sort parameter is an object with 'field' set to 'details_totalTvl' and 'direction' set to 'desc'. The limit is set to 5."
+        threshold: 0.9
+      - type: not-icontains
+        value: "details.totalTvl"
+
+  # ════════════════════════════════════════════════════════
+  # SECTION 9: Compound queries — multiple filters + sort
+  # ════════════════════════════════════════════════════════
+
+  - description: "Compound query: active Arbitrum markets with high APY, sorted by liquidity"
+    vars:
+      prompt: "Find active markets on Arbitrum with implied APY above 8%, sorted by liquidity descending, limit 10. Show the complete get_markets call."
+    assert:
+      - type: llm-rubric
+        value: "The filter array contains three entries: (1) chainId = 42161, (2) expiry > a future date string, (3) details_impliedApy > 0.08. All use the correct flat column names with details_ prefix and decimal APY values."
+        threshold: 0.8
+      - type: llm-rubric
+        value: "Sort is by details_liquidity descending, and limit is 10"
+        threshold: 0.8
+
+  - description: "Compound query: ETH-related markets with high LP APY"
+    vars:
+      prompt: "I want ETH-related Pendle markets where total LP APY exceeds 12%. Sort by LP APY descending. Show the exact call."
+    assert:
+      - type: llm-rubric
+        value: "Uses filter with name LIKE '%ETH%' and details_aggregatedApy > 0.12. Uses sort by details_aggregatedApy desc."
+        threshold: 0.8
+
+  # ════════════════════════════════════════════════════════
+  # SECTION 10: Pagination
+  # ════════════════════════════════════════════════════════
+
+  - description: "Pagination uses skip and limit parameters correctly"
+    vars:
+      prompt: "Show me markets 21-40 (the second page of 20 results), sorted by implied APY descending. Write the exact get_markets call."
+    assert:
+      - type: llm-rubric
+        value: "Uses skip: 20 and limit: 20 to get the second page. Sort by details_impliedApy desc."
+        threshold: 0.8
+
+  # ════════════════════════════════════════════════════════
+  # SECTION 11: one flag for single result
+  # ════════════════════════════════════════════════════════
+
+  - description: "Single market lookup by address uses one: true"
+    vars:
+      prompt: "Look up the market with address 0xd8fd77ba...abc on Arbitrum (chain 42161) from the local database. Show the get_markets call."
+    assert:
+      - type: llm-rubric
+        value: "Uses filter with chainId = 42161 and address = the market address, with one: true to return a single result instead of an array"
+        threshold: 0.8
+
+  # ════════════════════════════════════════════════════════
+  # SECTION 12: get_asset vs resolve_token distinction
+  # ════════════════════════════════════════════════════════
+
+  - description: "Uses get_asset for PT/YT/SY tokens, resolve_token for standard ERC-20s"
+    vars:
+      prompt: "I need to look up two things: (1) the metadata for a PT token at 0xPT...addr on Arbitrum, and (2) what address USDC has on Arbitrum. What tool calls do I need?"
+    assert:
+      - type: llm-rubric
+        value: "Uses get_asset for the PT token lookup (Pendle-specific token) and resolve_token for USDC (standard ERC-20)"
+        threshold: 0.8

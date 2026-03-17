@@ -1,0 +1,19 @@
+{
+  "name": "pendle-ai",
+  "version": "1.0.0-beta",
+  "owner": {
+    "name": "Pendle Finance",
+    "email": "dev@pendle.finance"
+  },
+  "metadata": {
+    "description": "AI plugins for Pendle Finance — trade yield tokens, manage LP positions, and query DeFi market data across 7 EVM chains.",
+    "repository": "https://github.com/pendle-finance/pendle-ai"
+  },
+  "plugins": [
+    {
+      "name": "pendle-v2",
+      "source": "./packages/plugins/pendle-v2",
+      "description": "Pendle V2 DeFi protocol — 23 semantic tools for trading yield tokens, managing LP positions, placing limit orders, and querying market data"
+    }
+  ]
+}
