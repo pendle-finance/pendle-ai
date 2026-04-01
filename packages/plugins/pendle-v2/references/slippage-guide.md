@@ -9,7 +9,7 @@ description: 'Slippage & Price Impact Guide -- Reference'
 
 ## Price Impact Scale
 
-`priceImpact` is returned in `routes[0].data.priceImpact` as a decimal.
+`priceImpact` is returned as a decimal in the tool response.
 
 | Price Impact | Display | Meaning | Recommended Action |
 |---|---|---|---|
@@ -27,17 +27,12 @@ YT purchases almost always show **negative price impact** (-1% to -2%). This is 
 
 ## Slippage Defaults
 
-All action tools use the same auto-slippage logic:
+All action tools use a fixed default slippage:
 
 | Condition | Slippage | Reason |
 |---|---|---|
-| Trade value ≥ $100 | `0.001` (0.1%) | Default — tight for normal-size trades |
-| Trade value < $100 | `0.005` (0.5%) | Small trades are more sensitive to rounding |
+| Default | `0.001` (0.1%) | Standard for all trades |
 | User explicitly passes `slippage` | User's value | Always respected |
-
-The MCP resolves slippage by looking up the input token's decimals (cached 1 week from `GET /v1/assets/all`) and USD price (cached 5 min from `GET /v1/prices/assets`), then computing the trade's USD value.
-
-If the lookup fails (unknown token, API error), the tool silently falls back to 0.5% (SLIPPAGE_SMALL_TRADE) to avoid blocking trades for tokens not in Pendle's registry.
 
 ### Never Use 0 Slippage
 

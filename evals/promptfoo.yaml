@@ -9,6 +9,5 @@ import:
   - suites/pendle-data/promptfoo.yaml
   - suites/pendle-portfolio/promptfoo.yaml
   - suites/pendle-order/promptfoo.yaml
-  # Layer 2: boots MCP server and validates tool responses against live API
+  # Layer 2: MCP tool tests against live Pendle API
   # Note: excluded from default run — use eval-suite-mcp-tools separately
-  # (requires built mcp-server and hits the live Pendle API)

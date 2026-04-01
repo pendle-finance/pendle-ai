@@ -22,7 +22,6 @@
       "cache": false
     },
     "eval": {
-      "dependsOn": ["@pendle/pendle-v2-mcp-server#build"],
       "inputs": [
         "promptfoo.yaml",
         "../../../packages/plugins/pendle-v2/skills/**/*",

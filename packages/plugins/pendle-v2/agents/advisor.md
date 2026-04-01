@@ -133,7 +133,7 @@ From the combined results, select **3-5 top candidate markets** based on:
 
 For each candidate, call `get_market` to get:
 - Full APY breakdown (implied, underlying, swap fee, PENDLE, aggregated, max boosted)
-- Accepted `tokensIn` / `tokensOut` — verify the user's input token is supported
+- Accepted `inputTokens` / `outputTokens` — verify the user's input token is supported
 - Pool composition (totalPt, totalSy, totalSupply)
 
 Also call `get_history` on the top 2-3 candidates to check APY trend stability:
@@ -142,7 +142,7 @@ Also call `get_history` on the top 2-3 candidates to check APY trend stability:
 
 #### 2d. Token compatibility
 
-For each candidate, check that the user's input token is in the market's `tokensIn` list (from `get_market`). If it is not a native token, the Pendle aggregator may still route through it — but note the dependency. Flag markets where no route is likely.
+For each candidate, check that the user's input token is in the market's `inputTokens` list (from `get_market`). If it is not a native token, the Pendle aggregator may still route through it — but note the dependency. Flag markets where no route is likely.
 
 #### 2e. External protocol scan
 
@@ -190,7 +190,7 @@ For EACH option, include ALL of the following:
 - **Market**: Name, chain, expiry date
 - **Action**: Buy PT / Buy YT / Add Liquidity
 - **Expected APY**: The specific APY number (fixed for PT, variable for YT, aggregated for LP)
-- **Input token compatibility**: Whether the user's token is in `tokensIn` directly or requires aggregator routing
+- **Input token compatibility**: Whether the user's token is in `inputTokens` directly or requires aggregator routing
 - **External integrations** *(if found in Step 2e)*: List protocols (e.g., "PT accepted as Aave collateral — loop possible") with `supplyApy`/`borrowApy`/`maxLtv` from `get_external_protocols`
 - **Rationale**: 1-2 sentences on why this option suits the user
 
@@ -289,7 +289,7 @@ Restate the top recommendation with a clear rationale incorporating the risk ass
 
 ## Important aspects that may affect the trade routes
 
-1. **Token input / output**: Check `tokensIn`/`tokensOut` from `get_market`. If the user's token is not in `tokensIn` directly, the Pendle aggregator may still route through it — but it adds swap risk. If no route is plausible, flag the market as incompatible. See `/pendle-data` for detailed token compatibility guidance.
+1. **Token input / output**: Check `inputTokens`/`outputTokens` from `get_market`. If the user's token is not in `inputTokens` directly, the Pendle aggregator may still route through it — but it adds swap risk. If no route is plausible, flag the market as incompatible. See `/pendle-data` for detailed token compatibility guidance.
 
 2. **External protocol integrations**: Use `get_external_protocols` to surface lending, restaking, and cross-chain integrations for PT/YT/LP. Key use cases:
    - **PT as collateral** (`slot=pt`): borrow stables, buy more PT, repeat (looping). Effective APY = `impliedApy / (1 - LTV)` at full loop. See `/pendle-data` for full math.
@@ -327,8 +327,8 @@ Chain: {chainName} ({chainId})
 | $X  | $X         | $X        |
 
 ### Entry / Exit
-Input tokens: {tokensIn joined by ", "}   ← from get_market
-Output tokens: {tokensOut joined by ", "}
+Input tokens: {inputTokens joined by ", "}   ← from get_market
+Output tokens: {outputTokens joined by ", "}
 User token compatible: Yes (native) / Yes (via aggregator) / No
 
 ### External Integrations  ← omit if none

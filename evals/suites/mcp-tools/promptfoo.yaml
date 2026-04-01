@@ -1,6 +1,8 @@
-description: "Layer 2 — MCP semantic tool tests (boots pendle-mcp, calls 25 tools against live Pendle API)"
+description: "Layer 2 — MCP semantic tool tests (calls 25 tools against live Pendle API)"
 
-# ─── Provider: actual MCP server ────────────────────────────────────────────
+# ─── Provider: remote MCP server ───────────────────────────────────────────
+# Set PENDLE_MCP_URL to test against a local server (e.g. http://localhost:9000/mcp)
+# Defaults to production: http://api-v2.pendle.finance/core/mcp
 maxConcurrency: 1
 
 providers:
@@ -9,8 +11,7 @@ providers:
       enabled: true
       timeout: 60000
       server:
-        command: node
-        args: ['../../../packages/plugins/pendle-v2/mcp-server/dist/index.js']
+        url: '{{ env.PENDLE_MCP_URL }}'
         name: pendle-mcp
 
 prompts:

@@ -263,21 +263,6 @@ tests:
         threshold: 0.9
 
   # ════════════════════════════════════════════════════════
-  # SECTION 6: Filter correctness — boolean columns
-  # ════════════════════════════════════════════════════════
-
-  # ────────────────────────────────────────────────────────
-  # Boolean columns use INTEGER (1/0), not true/false
-  # ────────────────────────────────────────────────────────
-  - description: "isPrime filter uses integer 1, not boolean true"
-    vars:
-      prompt: "Show me only prime Pendle markets. Write the exact get_markets filter."
-    assert:
-      - type: llm-rubric
-        value: "The filter for isPrime uses the integer value 1 (not boolean true or string 'true'), because SQLite stores booleans as INTEGER 1/0"
-        threshold: 0.8
-
-  # ════════════════════════════════════════════════════════
   # SECTION 7: Filter correctness — active market handling
   # ════════════════════════════════════════════════════════
 
