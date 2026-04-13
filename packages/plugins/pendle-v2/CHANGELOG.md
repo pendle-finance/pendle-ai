@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.1] - 2026-04-13
+
+- Updated to parity with MCP 1.0.1
+- MCP: feat: `get_markets` filter expired markets by default.
+- MCP: fix: `get_external_protocols` should return list of integrations, not just the protocol.
+
 ## [1.0.0] - Initial official release
 
 ### Added
