@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.2] - 2026-04-15
+
+- Updated to parity with MCP 1.0.2
+- MCP: revert: `get_external_protocols` returns only the protocols.
+- MCP: feat: Improve market queries with integration support.
+- MCP: feat: Add LO incentive data to `get_markets` and `get_order_book` for enhanced market insights.
+- MCP: feat: Add cross chain PT info and integration info to `get_markets`.
+
 ## [1.0.1] - 2026-04-13
 
 - Updated to parity with MCP 1.0.1
