@@ -1,6 +1,6 @@
 {
   "name": "pendle-v2",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Pendle V2 DeFi protocol — 25 semantic tools for trading yield tokens, managing LP positions, placing limit orders, and querying market data across multiple EVM chains",
   "license": "MIT",
   "keywords": ["pendle", "defi", "yield", "pt", "yt", "lp", "mcp", "trading", "limit-orders"],
