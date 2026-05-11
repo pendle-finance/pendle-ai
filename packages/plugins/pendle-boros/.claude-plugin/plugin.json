@@ -1,0 +1,23 @@
+{
+  "name": "pendle-boros",
+  "version": "1.0.0",
+  "description": "Boros — Pendle's interest-rate-derivatives platform on Arbitrum. 44 semantic tools for trading funding-rate swaps (YU long/short), managing cross- and isolated-margin accounts, providing AMM liquidity, and querying market data.",
+  "license": "MIT",
+  "keywords": [
+    "pendle",
+    "boros",
+    "defi",
+    "funding-rate",
+    "interest-rate-swap",
+    "yu",
+    "perp",
+    "arbitrum",
+    "mcp"
+  ],
+  "skills": [
+    "./skills/boros-trading",
+    "./skills/boros-data",
+    "./skills/boros-portfolio-account"
+  ],
+  "mcpServers": "./.mcp.json"
+}

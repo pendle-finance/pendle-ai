@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "boros": {
+      "command": "npx",
+      "args": ["-y", "@pendle/boros-mcp"],
+      "description": "Boros — Pendle's interest-rate-derivatives MCP server on Arbitrum. Trades funding-rate swaps via a delegated agent key; wallet ops re-prompt the user's browser wallet."
+    }
+  }
+}
