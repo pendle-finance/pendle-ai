@@ -70,6 +70,8 @@ Pass the interval the user asks for (`1m`, `5m`, `1h`, `1d`, etc.). `get_market_
 
 Need a deeper definition? Call `boros_glossary`.
 
+**YU denomination**: 1 YU = 1 unit of the market's **collateral token** of funding-bearing notional on the underlying perp (NOT the underlying base asset). All `volume24h`, `notionalOI`, and orderbook size figures returned by `get_markets` / `get_orderbook` are in collateral units. Resolve the collateral symbol via `get_assets` keyed by the market's `tokenId`.
+
 ---
 
 ## Output style

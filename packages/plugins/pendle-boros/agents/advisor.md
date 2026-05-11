@@ -16,7 +16,7 @@ You execute **read-only** analysis. You never place trades. After presenting opt
 
 ## Core concepts (call `boros_glossary` for fuller definitions)
 
-- **YU** — Yield Unit. Long YU pays the fixed APR locked at entry, receives the floating underlying APR. Short YU is the opposite.
+- **YU** — Yield Unit. 1 YU = 1 unit of the market's **collateral token** of funding-bearing notional on the underlying perp (NOT 1 unit of the underlying base asset). Example: on a USDT-collateralized BTC market, 30 YU = 30 USDT of BTC-funding notional (~$30). To get USD notional: multiply YU by the collateral token's usdPrice from `get_assets`. Long YU pays the fixed APR locked at entry, receives the floating underlying APR. Short YU is the opposite.
 - **Implied APR** — current market price of YU as a yield. Becomes the position's fixed APR at entry.
 - **Underlying APR** — the live floating rate the position pays or receives.
 - **Fixed APR at entry** — what was locked when the user opened.

@@ -85,6 +85,7 @@ The skill imports these read-only tools so the checks can run inside the trading
 - `marketId` (string) — what `place_order` takes. Resolve via `get_markets`. Never construct.
 - `side` — `0` = long, `1` = short. Long pays the fixed APR locked at entry and receives floating; short is the opposite.
 - `size` — always positive YU. Direction comes from `side`. Never sign the size.
+- **YU denomination** — 1 YU = 1 unit of the market's **collateral token** of funding-bearing notional on the underlying perp. NOT the underlying base asset. Resolve `tokenId` from `get_markets` → human symbol via `get_assets`. Example: on a USDT-collateralized BTC-funding market, 30 YU = 30 USDT of BTC-funding notional (~$30, not 30 BTC, not $3M). The dapp orderbook header confirms this (renders as "Total (<collateral> YU)"). Cost, margin, fees, PnL are all denominated in the same collateral token.
 - `limitApr` — annualized **decimal** (`0.05` = 5%, never `5`). Required for `orderType: "limit"`; optional for `"market"` (acts as a rate guard with IOC).
 - `slippage` — annualized decimal, only meaningful for `orderType: "market"` (FOK). For resting limit orders the `limitApr` is itself the guard.
 - `acknowledgeHighRate` — pass `true` only when the user has explicitly confirmed an APR far outside the current market range. If the tool rejects, treat it as a likely percent-vs-decimal typo and confirm with the user before retrying.
