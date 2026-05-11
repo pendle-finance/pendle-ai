@@ -14,6 +14,11 @@
       "name": "pendle-v2",
       "source": "./packages/plugins/pendle-v2",
       "description": "Pendle V2 DeFi protocol — 25 semantic tools for trading yield tokens, managing LP positions, placing limit orders, and querying market data"
+    },
+    {
+      "name": "pendle-boros",
+      "source": "./packages/plugins/pendle-boros",
+      "description": "Boros — Pendle's interest-rate-derivatives platform on Arbitrum. 44 semantic tools for trading funding-rate swaps, managing cross/isolated margin, and providing AMM liquidity."
     }
   ]
 }
